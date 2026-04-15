@@ -1,0 +1,14 @@
+bundle:
+  name: vaaniseva-v2
+
+resources:
+  apps:
+    vaaniseva-v2:
+      name: vaaniseva-v2
+      description: "VaaniSeva v2 — Enhanced with auto-token refresh and production-ready auth"
+      source_code_path: .
+
+targets:
+  dev:
+    default: true
+    mode: development

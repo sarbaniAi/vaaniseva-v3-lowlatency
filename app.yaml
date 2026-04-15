@@ -1,0 +1,52 @@
+command:
+  - uvicorn
+  - app:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8000"
+
+env:
+  # Sarvam AI
+  - name: SARVAM_API_KEY
+    value: "${SARVAM_API_KEY}"
+  - name: SARVAM_ENDPOINT_NAME
+    value: "sarvam-30b-serving"
+
+  # Lakebase
+  - name: LAKEBASE_PROJECT
+    value: "vaaniseva"
+  - name: LAKEBASE_BRANCH
+    value: "production"
+  - name: LAKEBASE_ENDPOINT
+    value: "primary"
+  - name: LAKEBASE_HOST
+    value: "${LAKEBASE_HOST}"
+  - name: LAKEBASE_DB_NAME
+    value: "vaaniseva"
+
+  # Vector Search / Genie
+  - name: VS_ENDPOINT_NAME
+    value: ""
+  - name: VS_INDEX_NAME
+    value: ""
+  - name: GENIE_SPACE_ID
+    value: ""
+
+  # Twilio (WhatsApp)
+  - name: TWILIO_ACCOUNT_SID
+    value: "${TWILIO_ACCOUNT_SID}"
+  - name: TWILIO_AUTH_TOKEN
+    value: "${TWILIO_AUTH_TOKEN}"
+  - name: TWILIO_PHONE_NUMBER
+    value: "${TWILIO_PHONE_NUMBER}"
+  - name: TWILIO_WHATSAPP_FROM
+    value: "whatsapp:+14155238886"
+
+  # LiveKit (real-time voice)
+  - name: LIVEKIT_URL
+    value: "${LIVEKIT_URL}"
+  - name: LIVEKIT_API_KEY
+    value: "${LIVEKIT_API_KEY}"
+  - name: LIVEKIT_API_SECRET
+    value: "${LIVEKIT_API_SECRET}"

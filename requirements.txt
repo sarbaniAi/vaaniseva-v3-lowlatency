@@ -1,0 +1,12 @@
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.5.0
+requests>=2.31.0
+psycopg[binary]>=3.1.0
+psycopg_pool>=3.1.0
+databricks-sdk>=0.20.0
+twilio>=9.0.0
+# LiveKit + Sarvam — real-time voice via WebRTC
+# Ref: https://docs.sarvam.ai/api-reference-docs/cookbook/example-voice-agents/collection-agent
+livekit-agents[sarvam,openai,silero]>=1.5.0
+sarvamai>=0.1.27

@@ -1,0 +1,27 @@
+# Secrets
+.env
+app.yaml.local
+
+# Python
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# Databricks
+.databricks/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Misc
+mermaid-config.json
+*.png
+*.log
