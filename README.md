@@ -229,31 +229,90 @@ enhance-vaaniseva/
 ### Phone Call Flow
 
 1. User clicks **"Phone Call (SIP)"** in the web UI
-2. FastAPI loads customer + loan data from **Lakebase**
+2. FastAPI loads customer + loan data from **Databricks Lakebase**
 3. **LiveKit room** is created, agent connects via WebSocket
 4. **LiveKit SIP** dials the phone via **Twilio SIP Trunk**
 5. Phone rings, customer picks up, **then agent starts** (dial-then-start pattern)
-6. **GPT-4o** generates greeting with customer-specific loan data
-7. **Sarvam TTS** (anushka voice) converts text to realistic Hindi speech
-8. Customer speaks, **Sarvam STT** (saaras:v3 streaming) transcribes
-9. **GPT-4o** responds with context, **Sarvam TTS** speaks it back
+6. **GPT-4.1-nano** generates greeting with customer-specific loan data (Devanagari instructions)
+7. **Sarvam TTS** bulbul:v3 (Priya voice, PCM 8kHz) converts text to realistic Hindi speech
+8. Customer speaks, **Sarvam STT** saaras:v3 (streaming WebSocket, hi-IN) transcribes
+9. **GPT-4.1-nano** responds with context, **Sarvam TTS** speaks it back
 10. Conversation continues until resolution or escalation
+
+### WhatsApp Collections Flow
+
+```
+Customer WhatsApp                Twilio                    Databricks App
+     |                             |                            |
+     |-- "hi" ------------------>  |                            |
+     |                             |-- webhook (blocked by SSO) |
+     |                             |                            |
+     |                             |-- Twilio Function -------> |
+     |                             |   (relay with OAuth)       |
+     |                             |   POST /api/whatsapp/process
+     |                             |                            |
+     |                             |                  +---------+---------+
+     |                             |                  | Flow Engine       |
+     |                             |                  | 1. Menu           |
+     |                             |                  | 2. Verify Account |
+     |                             |                  |    (Lakebase)     |
+     |                             |                  | 3. Show EMI/Loans |
+     |                             |                  | 4. Payment Link   |
+     |                             |                  | 5. Restructuring  |
+     |                             |                  | 6. AI Chat (LLM)  |
+     |                             |                  +---------+---------+
+     |                             |                            |
+     |                             | <-- reply JSON ---------- |
+     |                             |                            |
+     | <-- WhatsApp message ------ |                            |
+```
+
+**How it works:**
+
+1. Customer sends a WhatsApp message to the Twilio sandbox number
+2. Twilio can't reach Databricks App directly (SSO blocks webhooks)
+3. A **Twilio Function** (`twilio_function.js`) acts as a relay:
+   - Authenticates via **Service Principal** (client_credentials OAuth)
+   - Forwards the message to `POST /api/whatsapp/process`
+   - Returns the reply to Twilio for delivery
+4. The **Flow Engine** (`whatsapp_api.py`) processes the message:
+   - **Menu**: Shows options (Payment, EMI Check, Restructuring, Callback, AI Chat)
+   - **Account Verification**: Looks up customer by last 4 digits in **Lakebase**
+   - **Loan Details**: Fetches EMI, overdue amount, days from Lakebase
+   - **AI Chat**: Free-form conversation via **Sarvam-M / GPT-4o** LLM
+   - **Voice Notes**: Transcribed via **Sarvam STT** (saaras:v3)
+
+**WhatsApp Menu Flow:**
+```
+Customer sends "hi"
+  --> Menu: 1.Payment  2.EMI  3.Restructure  4.Callback  5.AI Chat
+Customer sends "2"
+  --> "Share your last 4 digits of account number."
+Customer sends "6543"
+  --> Lakebase lookup --> "Amit Patel ji, your Personal Loan EMI: ₹15,000. Overdue: ₹30,000 (45 days)"
+```
+
+**Setup:** Deploy `twilio_function.js` to Twilio Functions, set env vars (SP_CLIENT_ID, SP_CLIENT_SECRET, DB_HOST, APP_HOST), configure WhatsApp sandbox webhook to the function URL.
 
 ### Why This Architecture?
 
 - **LiveKit SIP bridge** -- both agent and phone make *outbound* connections to LiveKit Cloud. No incoming webhooks needed, works behind Databricks Apps SSO/firewall.
-- **Custom Sarvam REST TTS** -- the `livekit-plugins-sarvam` WebSocket TTS has a format bug (sends MP3, declares WAV). `sarvam_tts_rest.py` uses the REST API which returns proper WAV.
+- **Twilio Function relay** -- WhatsApp webhooks can't reach Databricks Apps (SSO). The relay function authenticates via Service Principal and forwards requests.
+- **Custom Sarvam SDK streaming TTS** -- the `livekit-plugins-sarvam` WebSocket TTS has a format bug (sends MP3, declares WAV). `sarvam_tts_streaming.py` uses the SDK `convert_stream()` for progressive PCM audio delivery.
 - **Dial-then-start** -- agent session starts *after* the phone is answered, so the greeting plays to a live caller, not into an empty room.
-- **Customer data in LLM instructions** -- all Lakebase data (name, loans, overdue amounts) is injected into GPT-4o's system prompt, following the [Sarvam cookbook pattern](https://docs.sarvam.ai/api-reference-docs/cookbook/example-voice-agents/collection-agent).
+- **Customer data in LLM instructions** -- all Lakebase data (name, loans, overdue amounts) is injected into the LLM system prompt, following the [Sarvam cookbook pattern](https://docs.sarvam.ai/api-reference-docs/cookbook/example-voice-agents/collection-agent).
 
 ## Latency
 
 | Component | Latency |
 |-----------|---------|
 | Sarvam STT (streaming WebSocket) | ~0.5s |
-| GPT-4o (streaming) | ~1.0s |
-| Sarvam TTS (REST) | ~1.5s |
-| **Total per turn** | **~3s** |
+| GPT-4.1-nano (streaming) | ~0.5-1.0s |
+| Sarvam TTS bulbul:v3 (SDK streaming, TTFB) | ~0.5s |
+| VAD endpointing | ~0.3-1.0s |
+| **Perceived latency (user stops speaking → hears response)** | **~3-5s** |
+
+> To reduce further: ask Sarvam team to enable WebSocket streaming TTS endpoint (`wss://api.sarvam.ai/v1/text-to-speech/stream`) for ~200ms TTFB.
 
 ## Customization
 
@@ -261,7 +320,7 @@ enhance-vaaniseva/
 Edit `build_collection_instructions()` in `vaaniseva/voice/livekit_agent.py`.
 
 ### Change TTS voice
-Modify `SarvamRestTTS` parameters: `speaker` (anushka, priya, kavya, etc.), `target_language_code` (hi-IN, bn-IN, ta-IN, etc.).
+Modify `SarvamStreamingTTS` parameters: `speaker` (priya, ishita, shubh, ratan, etc.), `target_language_code` (hi-IN, bn-IN, ta-IN, etc.). See Bulbul v3 Best Practices Guide for recommended speakers per language.
 
 ### Use different LLM
 Replace `openai_plugin.LLM(model="gpt-4o")` with any OpenAI-compatible LLM.
