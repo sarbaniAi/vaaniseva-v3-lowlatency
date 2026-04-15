@@ -2,7 +2,7 @@
 
 Real-time AI voice agent that makes outbound phone calls for loan collections, speaking naturally in Hindi/Hinglish with empathy and RBI compliance.
 
-**Stack:** Sarvam AI (STT/TTS) + GPT-4o (LLM) + LiveKit (WebRTC/SIP) + Databricks Lakebase (data) + FastAPI (app)
+**Stack:** Sarvam AI (STT/TTS) + GPT-4.1-nano (LLM) + LiveKit (WebRTC/SIP) + Databricks Lakebase (data) + FastAPI (app)
 
 ## Architecture
 
@@ -15,7 +15,7 @@ Phone (PSTN)  -->  Twilio SIP Trunk  -->  LiveKit SIP Bridge  -->  LiveKit Room
                                                               |  saaras:v3      |
                                                               |  (streaming)    |
                                                               +-----------------+
-                                                              |  GPT-4o LLM     |
+                                                              |  GPT-4.1-nano   |
                                                               |  (with customer |
                                                               |   data context) |
                                                               +-----------------+
@@ -38,8 +38,9 @@ Phone (PSTN)  <--  Twilio SIP Trunk  <--  LiveKit SIP Bridge  <--  LiveKit Room
 - **Sarvam AI voice** -- realistic Hindi/Indian language STT (saaras:v3) and TTS (bulbul:v2, anushka voice)
 - **Smart agent brain** -- GPT-4o with full customer context (loans, EMI, overdue amounts) from Lakebase
 - **WhatsApp collections** -- multi-step WhatsApp flow via Twilio
-- **Quality audit** -- RBI compliance scoring via LLM
-- **Web dashboard** -- 4-tab UI: Customer Simulator, Agent Live View, Quality Auditor, WhatsApp
+- **Web dashboard** -- 4-tab UI: Customer Simulator, Agent Live View (planned), Quality Auditor (planned), WhatsApp
+
+> **Note:** Agent Live View and Quality Auditor tabs are visible in the UI but not yet implemented. They are planned for a future release.
 - **Data sovereignty** -- Sarvam AI is India-hosted, Lakebase on Azure Central India
 
 ## Prerequisites
