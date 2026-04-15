@@ -230,6 +230,14 @@ Set T1, T2, T3, T4 in Twilio Console > Functions > your service > Environment Va
 
 > **Important:** User OAuth tokens expire in **1 hour**. You must regenerate and redeploy T1-T4 tokens before each testing session. For production, use the v2 Twilio Function (`twilio_function.js`) which auto-refreshes via Service Principal.
 
+> **Troubleshooting — 401 / Empty Response `{}`:**
+> If WhatsApp returns "Error. Reply menu" and the Twilio Function logs show `App resp: {}`, the token is being rejected. Common causes:
+>
+> 1. **Using Service Principal (SP) token instead of User token** — Databricks Apps do NOT accept SP OAuth tokens for API access, even with `CAN_USE` or `CAN_MANAGE` permissions. You MUST use a **user OAuth token** generated via `databricks auth token --profile <profile>`.
+> 2. **Token expired** — User tokens expire in 1 hour. Regenerate T1-T4 and redeploy.
+> 3. **IP ACL blocking** — Check Twilio Function logs for `"Source IP address: x.x.x.x is blocked"`. Add the IP to workspace ACL (see Step 4).
+> 4. **Sandbox expired** — Twilio WhatsApp sandbox sessions expire every 72 hours. Rejoin by sending the sandbox keyword.
+
 ### Step 3: Configure WhatsApp Sandbox Webhook
 
 1. Go to **Twilio Console** > **Messaging** > **Try it Out** > **Send a WhatsApp Message**
