@@ -172,6 +172,141 @@ lk sip outbound create outbound-trunk.json
 
 Open http://localhost:8000, select a customer, enter a phone number, click **"Phone Call (SIP)"**.
 
+## WhatsApp Setup (Twilio Sandbox + Token Relay)
+
+WhatsApp collections flow uses a **Twilio Function** as a relay between WhatsApp and the Databricks App. This is needed because Databricks Apps are behind SSO — Twilio can't call them directly.
+
+### Architecture
+
+```
+Customer Phone (WhatsApp)
+    |
+    v
+Twilio WhatsApp Sandbox (+1 415 523 8886)
+    |
+    v
+Twilio Function (twilio_function.js)
+    |  - Concatenates T1+T2+T3+T4 = OAuth token
+    |  - Calls POST https://<app>/api/whatsapp/process
+    |  - Returns reply to Twilio
+    v
+Databricks App (VaaniSeva)
+    |  - Flow engine: menu, verify account, EMI lookup
+    |  - Lakebase queries for customer/loan data
+    |  - AI chat via LLM for free-form questions
+    v
+Reply sent back to customer's WhatsApp
+```
+
+### Step 1: Deploy Twilio Function
+
+1. Go to **Twilio Console** > **Functions & Assets** > **Services**
+2. Create a new service (e.g., `vaaniseva-wa`)
+3. Add a function at path `/whatsapp` — paste the contents of `twilio_function.js`
+4. Set environment variables:
+   - `APP_HOST` = your Databricks App hostname (e.g., `yatra-voice-agent-984752964297111.11.azure.databricksapps.com`)
+   - `SARVAM_KEY` = your Sarvam API key
+   - `T1`, `T2`, `T3`, `T4` = OAuth token split (see Step 2)
+5. Deploy the function
+
+### Step 2: Generate OAuth Tokens (T1-T4)
+
+Databricks Apps require **user OAuth tokens** (not Service Principal tokens). The token is split into 4 parts because Twilio env vars have a 255-char limit.
+
+```bash
+# Generate user token via Databricks CLI
+TOKEN=$(databricks auth token --profile <your-profile> | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+echo "Token length: ${#TOKEN}"
+
+# Split into T1-T4
+echo "T1=${TOKEN:0:255}"
+echo "T2=${TOKEN:255:255}"
+echo "T3=${TOKEN:510:255}"
+echo "T4=${TOKEN:765:255}"
+```
+
+Set T1, T2, T3, T4 in Twilio Console > Functions > your service > Environment Variables, then **Deploy** the function.
+
+> **Important:** User OAuth tokens expire in **1 hour**. You must regenerate and redeploy T1-T4 tokens before each testing session. For production, use the v2 Twilio Function (`twilio_function.js`) which auto-refreshes via Service Principal.
+
+### Step 3: Configure WhatsApp Sandbox Webhook
+
+1. Go to **Twilio Console** > **Messaging** > **Try it Out** > **Send a WhatsApp Message**
+2. Note your sandbox keyword (e.g., `join highest-try`)
+3. Set the webhook URL: `https://your-service-xxxx.twil.io/whatsapp`
+4. Method: POST
+
+### Step 4: Add Twilio Function IPs to Workspace ACL
+
+Twilio Functions run on dynamic AWS IPs. Add broad ranges to your Databricks workspace IP Access List:
+
+```bash
+databricks api post /api/2.0/ip-access-lists --json '{
+  "label": "twilio-functions",
+  "list_type": "ALLOW",
+  "ip_addresses": [
+    "3.80.0.0/12",
+    "3.92.0.0/14",
+    "34.192.0.0/12",
+    "34.224.0.0/12",
+    "44.192.0.0/11",
+    "52.0.0.0/11",
+    "54.80.0.0/13",
+    "100.24.0.0/13",
+    "100.53.0.0/16"
+  ]
+}'
+```
+
+### Step 5: Test
+
+1. Send the sandbox keyword to **+1 415 523 8886** on WhatsApp (rejoin every 72 hours)
+2. Send **"hi"** — you should see the collections menu
+3. Send **"2"** (EMI check) → enter last 4 digits of account → see loan details from Lakebase
+
+### Automated Token Refresh (via CLI)
+
+To quickly refresh T1-T4 tokens and redeploy the Twilio Function:
+
+```bash
+# Set your Twilio v1 credentials
+V1_SID="your-twilio-account-sid"
+V1_TOKEN="your-twilio-auth-token"
+SERVICE_SID="your-twilio-service-sid"
+ENV_SID="your-twilio-environment-sid"
+
+# Generate fresh user token
+TOKEN=$(databricks auth token --profile <your-profile> | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Split and update
+for i in 1 2 3 4; do
+  START=$(( (i-1) * 255 ))
+  VAL="${TOKEN:$START:255}"
+  VAR_SID=$(curl -s "https://serverless.twilio.com/v1/Services/$SERVICE_SID/Environments/$ENV_SID/Variables" \
+    -u "$V1_SID:$V1_TOKEN" | python3 -c "
+import sys,json
+for v in json.load(sys.stdin)['variables']:
+    if v['key'] == 'T$i': print(v['sid']); break
+")
+  curl -s -X POST "https://serverless.twilio.com/v1/Services/$SERVICE_SID/Environments/$ENV_SID/Variables/$VAR_SID" \
+    -u "$V1_SID:$V1_TOKEN" -d "Value=$VAL" > /dev/null
+  echo "Updated T$i"
+done
+
+# Rebuild and deploy (required for env var changes to take effect)
+BUILD=$(curl -s -X POST "https://serverless.twilio.com/v1/Services/$SERVICE_SID/Builds" \
+  -u "$V1_SID:$V1_TOKEN" \
+  --data-urlencode "FunctionVersions=<FV1_SID>" \
+  --data-urlencode "FunctionVersions=<FV2_SID>" \
+  --data-urlencode "FunctionVersions=<FV3_SID>" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['sid'])")
+sleep 10
+curl -s -X POST "https://serverless.twilio.com/v1/Services/$SERVICE_SID/Environments/$ENV_SID/Deployments" \
+  -u "$V1_SID:$V1_TOKEN" -d "BuildSid=$BUILD"
+echo "Deployed with fresh tokens"
+```
+
 ## Project Structure
 
 ```
